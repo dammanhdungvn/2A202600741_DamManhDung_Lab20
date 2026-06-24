@@ -2,6 +2,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -58,7 +59,7 @@ class LLMClient:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         reraise=True
     )
-    def _call_api_with_retry(self, system_prompt: str, user_prompt: str) -> any:
+    def _call_api_with_retry(self, system_prompt: str, user_prompt: str) -> Any:
         # Enforce rate limit before calling API
         _wait_for_rate_limit()
         

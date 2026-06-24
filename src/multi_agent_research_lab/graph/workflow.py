@@ -1,4 +1,7 @@
+from typing import Any
+
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from multi_agent_research_lab.agents.analyst import AnalystAgent
 from multi_agent_research_lab.agents.critic import CriticAgent
@@ -12,9 +15,9 @@ class MultiAgentWorkflow:
     """Builds and runs the multi-agent graph."""
 
     def __init__(self) -> None:
-        self.compiled_graph = None
+        self.compiled_graph: CompiledStateGraph[Any, Any, Any, Any] | None = None
 
-    def build(self) -> object:
+    def build(self) -> CompiledStateGraph[Any, Any, Any, Any]:
         """Create a LangGraph graph."""
         graph = StateGraph(ResearchState)
 
@@ -46,8 +49,8 @@ class MultiAgentWorkflow:
                 "analyst": "analyst",
                 "writer": "writer",
                 "critic": "critic",
-                "END": END
-            }
+                "END": END,
+            },
         )
 
         # 5. Add direct edges from worker nodes back to supervisor
@@ -61,17 +64,15 @@ class MultiAgentWorkflow:
 
     def run(self, state: ResearchState) -> ResearchState:
         """Execute the graph and return final state."""
-        if self.compiled_graph is None:
-            self.build()
-            
+        compiled = self.compiled_graph if self.compiled_graph is not None else self.build()
+
         # Invoke compiled LangGraph
-        result = self.compiled_graph.invoke(state)
-        
+        result: Any = compiled.invoke(state)
+
         # Convert result back to ResearchState safely
         if isinstance(result, ResearchState):
             return result
-        elif isinstance(result, dict):
+        if isinstance(result, dict):
             return ResearchState(**result)
-            
-        return result
 
+        raise TypeError(f"Unexpected result type from graph: {type(result)}")
