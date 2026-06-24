@@ -1,156 +1,211 @@
-# Lab 20: Multi-Agent Research System Starter
+# Lab 20: Multi-Agent Research System
 
-Starter repo cho bài lab **Multi-Agent Systems**: xây dựng hệ thống nghiên cứu gồm **Supervisor + Researcher + Analyst + Writer** và benchmark với single-agent baseline.
+Hệ thống nghiên cứu đa tác nhân (**Multi-Agent Research System**) gồm **Supervisor + Researcher + Analyst + Writer + Critic** được điều phối bằng **LangGraph**, so sánh với single-agent baseline qua benchmark tự động.
 
-> Mục tiêu của repo này là cung cấp **production-grade skeleton** để học viên phát triển code cá nhân. Các phần logic quan trọng được để ở dạng `TODO` để học viên tự triển khai.
+## Learning Outcomes
 
-## Learning outcomes
+Sau khi hoàn thành lab, học viên có thể:
 
-Sau 2 giờ lab, học viên cần có thể:
+1. Thiết kế **role rõ ràng** cho từng agent với input/output riêng biệt.
+2. Xây dựng **shared state** (`ResearchState`) đủ thông tin cho handoff giữa các agent.
+3. Thêm **guardrail**: max iterations, timeout, retry/fallback, validation.
+4. **Trace** luồng chạy từng bước và giải thích agent nào làm gì.
+5. **Benchmark** single-agent vs multi-agent theo quality, latency, cost.
 
-1. Thiết kế role rõ ràng cho nhiều agent.
-2. Xây dựng shared state đủ thông tin cho handoff.
-3. Thêm guardrail tối thiểu: max iterations, timeout, retry/fallback, validation.
-4. Trace được luồng chạy và giải thích agent nào làm gì.
-5. Benchmark single-agent vs multi-agent theo quality, latency, cost.
+---
 
-## Architecture mục tiêu
+## Architecture
 
 ```text
 User Query
    |
    v
-Supervisor / Router
-   |------> Researcher Agent  -> research_notes
-   |------> Analyst Agent     -> analysis_notes
-   |------> Writer Agent      -> final_answer
+Supervisor (LLM-based routing + deterministic fallback)
+   |──────> Researcher Agent  → state.sources + state.research_notes
+   |──────> Analyst Agent     → state.analysis_notes
+   |──────> Writer Agent      → state.final_answer
+   |──────> Critic Agent      → fact-check + agent_results
    |
    v
-Trace + Benchmark Report
+LangGraph END → Trace JSON + Benchmark Report (reports/benchmark_report.md)
 ```
 
-## Cấu trúc repo
+### Routing Policy
+
+```
+START → Supervisor
+  ├── research_notes is None? → Researcher → (back to Supervisor)
+  ├── analysis_notes is None? → Analyst   → (back to Supervisor)
+  ├── final_answer is None?   → Writer    → (back to Supervisor)
+  ├── no Critic run yet?      → Critic    → (back to Supervisor)
+  └── all done?               → FINISH
+```
+
+---
+
+## Kết quả Benchmark (Live Run)
+
+| Metric | Single-Agent | Multi-Agent |
+|---|---:|---:|
+| Latency | 41.69s | 88.69s |
+| Cost | $0.001415 | $0.005573 |
+| **Quality Score (0-10)** | 3.5 | **7.5** |
+| Citations | 0 | 2 |
+| Errors | 0 | 0 |
+| Route Steps | 0 | 5 |
+
+> **+4.0 điểm chất lượng** nhờ role specialization: mỗi agent tập trung vào một giai đoạn, CriticAgent fact-check kết quả trước khi output.
+
+---
+
+## Cấu trúc Repo
 
 ```text
 .
 ├── src/multi_agent_research_lab/
-│   ├── agents/              # Agent interfaces + skeletons
-│   ├── core/                # Config, state, schemas, errors
-│   ├── graph/               # LangGraph workflow skeleton
-│   ├── services/            # LLM, search, storage clients
-│   ├── evaluation/          # Benchmark/evaluation skeleton
-│   ├── observability/       # Logging/tracing hooks
-│   └── cli.py               # CLI entrypoint
-├── configs/                 # YAML configs for lab variants
-├── docs/                    # Lab guide, rubric, design notes
-├── tests/                   # Unit tests for skeleton behavior
-├── notebooks/               # Optional notebook entrypoint
-├── scripts/                 # Helper scripts
-├── .env.example             # Environment variables template
-├── pyproject.toml           # Python project config
-├── Dockerfile               # Containerized dev/runtime
-└── Makefile                 # Common commands
+│   ├── agents/
+│   │   ├── supervisor.py     # LLM-based routing + deterministic fallback
+│   │   ├── researcher.py     # Mock search + research notes synthesis
+│   │   ├── analyst.py        # Claim extraction + gap analysis
+│   │   ├── writer.py         # Final report with inline citations
+│   │   └── critic.py         # Fact-check against source snippets
+│   ├── core/
+│   │   ├── config.py         # Settings (Pydantic + .env)
+│   │   ├── schemas.py        # All Pydantic data models
+│   │   ├── state.py          # ResearchState + helper methods
+│   │   └── errors.py         # Custom error types
+│   ├── graph/
+│   │   └── workflow.py       # LangGraph StateGraph compilation
+│   ├── services/
+│   │   ├── llm_client.py     # Nvidia API client, 40 RPM rate limit, tenacity retry
+│   │   └── search_client.py  # Mock search corpus (offline, no API key needed)
+│   ├── evaluation/
+│   │   ├── benchmark.py      # run_benchmark(), LLM-as-judge quality scorer
+│   │   └── report.py         # render_markdown_report()
+│   ├── observability/
+│   │   ├── logging.py        # Structured logging setup
+│   │   └── tracing.py        # Local JSON trace persistence to reports/traces/
+│   └── cli.py                # CLI: baseline | multi-agent | benchmark
+├── specs/001-multi-agent-research/
+│   ├── spec.md               # Feature specification
+│   ├── plan.md               # Implementation plan
+│   ├── tasks.md              # Task checklist (21/21 ✅)
+│   └── quickstart.md         # Validation scenarios + actual results
+├── reports/
+│   └── benchmark_report.md   # Auto-generated comparison report
+├── docs/
+│   ├── lab_guide.md          # Lab milestones + exit ticket
+│   ├── design_template.md    # Architecture decisions + routing policy
+│   └── openai-call-api.md    # API call reference
+├── tests/                    # 7 unit tests (7/7 passing)
+├── .env.example              # Environment variables template
+├── pyproject.toml            # Python project config (uv)
+├── Dockerfile                # Containerized dev/runtime
+└── Makefile                  # Common commands
 ```
+
+---
 
 ## Quickstart
 
-### 1. Tạo môi trường
+### 1. Cài đặt môi trường (dùng `uv`)
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
-pip install -e "[dev]"
+uv venv
+source .venv/bin/activate
+uv pip install -e ".[dev,llm]"
 cp .env.example .env
 ```
 
-### 2. Cấu hình API keys
-
-Mở `.env` và điền key cần thiết.
+### 2. Cấu hình API keys trong `.env`
 
 ```bash
-OPENAI_API_KEY=...
-# optional
-LANGSMITH_API_KEY=...
-TAVILY_API_KEY=...
+OPENAI_API_KEY=nvapi-...          # Nvidia API key
+OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1
+OPENAI_MODEL_NAME=meta/llama-3.1-8b-instruct
+MAX_ITERATIONS=6
+LOG_LEVEL=INFO
 ```
+
+> **SearchClient** dùng mock data tĩnh — không cần Tavily/Google API key.
 
 ### 3. Chạy smoke test
 
 ```bash
-make test
-python -m multi_agent_research_lab.cli --help
+uv run pytest -v
+# Expected: 7/7 passed
 ```
 
-### 4. Chạy baseline skeleton
+### 4. Chạy Single-Agent Baseline
 
 ```bash
-python -m multi_agent_research_lab.cli baseline \
+uv run python -m multi_agent_research_lab.cli baseline \
   --query "Research GraphRAG state-of-the-art and write a 500-word summary"
 ```
 
-Lệnh này chỉ chạy khung baseline tối giản. Học viên cần tự triển khai logic LLM thực tế trong `src/multi_agent_research_lab/services/llm_client.py`.
+Output: Panel styled với summary + latency/token/cost stats.
 
-### 5. Chạy multi-agent skeleton
+### 5. Chạy Multi-Agent Workflow
 
 ```bash
-python -m multi_agent_research_lab.cli multi-agent \
+uv run python -m multi_agent_research_lab.cli multi-agent \
   --query "Research GraphRAG state-of-the-art and write a 500-word summary"
 ```
 
-Mặc định lệnh sẽ báo các `TODO` cần làm. Đây là chủ đích của starter repo.
+Output: Full `ResearchState` JSON + route path + trace file path.
 
-## Milestones trong 2 giờ lab
-
-| Thời lượng | Milestone | File gợi ý |
-|---:|---|---|
-| 0-15' | Setup, chạy baseline skeleton | `cli.py`, `services/llm_client.py` |
-| 15-45' | Build Supervisor / router | `agents/supervisor.py`, `graph/workflow.py` |
-| 45-75' | Thêm Researcher, Analyst, Writer | `agents/*.py`, `core/state.py` |
-| 75-95' | Trace + benchmark single vs multi | `observability/tracing.py`, `evaluation/benchmark.py` |
-| 95-115' | Peer review theo rubric | `docs/peer_review_rubric.md` |
-| 115-120' | Exit ticket | `docs/lab_guide.md` |
-
-## Quy ước production trong repo
-
-- Tách rõ `agents`, `services`, `core`, `graph`, `evaluation`, `observability`.
-- Không hard-code API key trong code.
-- Tất cả input/output chính dùng Pydantic schema.
-- Có type hints, linting, formatting, unit test tối thiểu.
-- Có logging/tracing hook ngay từ đầu.
-- Không để agent chạy vô hạn: dùng `max_iterations`, `timeout_seconds`.
-- Có benchmark report thay vì chỉ demo output đẹp.
-
-## TODO chính cho học viên
-
-Tìm trong code các marker:
+### 6. Chạy Benchmark (so sánh cả hai)
 
 ```bash
-grep -R "TODO(student)" -n src tests docs
+uv run python -m multi_agent_research_lab.cli benchmark \
+  --query "Research GraphRAG state-of-the-art and write a 500-word summary"
 ```
 
-Các phần học viên cần tự làm:
+Output: Comparative markdown table + saves `reports/benchmark_report.md`.
 
-1. Implement LLM client.
-2. Implement web/search client hoặc mock search source.
-3. Implement routing decision trong Supervisor.
-4. Implement từng worker agent.
-5. Build LangGraph workflow.
-6. Thêm tracing provider thật: LangSmith, Langfuse hoặc OpenTelemetry.
-7. Viết benchmark report.
+---
+
+## Guardrails được triển khai
+
+| Guardrail | Cơ chế |
+|---|---|
+| Rate limit (40 RPM) | Thread-safe spacing delay (1.6s/call) trong `LLMClient` |
+| Max iterations | `SupervisorAgent` buộc `FINISH` khi `iteration >= MAX_ITERATIONS` (default: 6) |
+| Retry on failure | `tenacity`: 3 lần thử, exponential backoff 2–10s |
+| LLM parse failure | JSON parse error → deterministic fallback routing |
+| Missing state fields | Mỗi agent validate input trước khi call LLM; log error nếu thiếu |
+| Infinite loop | `route_history` audit trail + iteration counter |
+
+---
 
 ## Deliverables
 
-Học viên nộp:
+| # | Deliverable | Status |
+|---|---|---|
+| 1 | GitHub repo cá nhân | ✅ |
+| 2 | `reports/benchmark_report.md` | ✅ Generated |
+| 3 | Trace logs | ✅ `reports/traces/*.json` |
+| 4 | Exit ticket (2 câu hỏi) | ✅ Trong `specs/001-multi-agent-research/tasks.md` |
+| 5 | 7/7 unit tests passing | ✅ |
 
-1. GitHub repo cá nhân.
-2. Screenshot trace hoặc link trace.
-3. `reports/benchmark_report.md` so sánh single vs multi-agent.
-4. Một đoạn giải thích failure mode và cách fix.
+---
+
+## Exit Ticket
+
+**1. Case nào nên dùng multi-agent? Vì sao?**
+
+Khi task có nhiều giai đoạn độc lập (research → analyze → write → review), khi chất lượng/fact-accuracy quan trọng hơn latency, khi cần observability và audit trail rõ ràng, hoặc khi một LLM call đơn lẻ không đủ context window để xử lý toàn bộ.
+
+**2. Case nào không nên dùng multi-agent? Vì sao?**
+
+Khi task đơn giản và self-contained (không cần phân tách giai đoạn), khi latency là yếu tố quyết định (real-time chat UI), hoặc khi budget hạn chế — multi-agent tốn ~4× chi phí LLM và 2× latency so với single-agent.
+
+---
 
 ## References
 
-- Anthropic: Building effective agents — https://www.anthropic.com/engineering/building-effective-agents
-- OpenAI Agents SDK orchestration/handoffs — https://developers.openai.com/api/docs/guides/agents/orchestration
-- LangGraph concepts — https://langchain-ai.github.io/langgraph/concepts/
-- LangSmith tracing — https://docs.smith.langchain.com/
-- Langfuse tracing — https://langfuse.com/docs
+- [Building effective agents — Anthropic](https://www.anthropic.com/engineering/building-effective-agents)
+- [LangGraph concepts — LangChain](https://langchain-ai.github.io/langgraph/concepts/)
+- [OpenAI Agents SDK orchestration](https://developers.openai.com/api/docs/guides/agents/orchestration)
+- [GraphRAG — Microsoft](https://github.com/microsoft/graphrag)
+- [LangSmith tracing](https://docs.smith.langchain.com/)
