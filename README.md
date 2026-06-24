@@ -113,9 +113,15 @@ START → Supervisor
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -e ".[dev,llm]"
+uv pip install -e ".[dev,llm]"   # Chú ý dấu chấm (.) trước [dev,llm]
 cp .env.example .env
 ```
+
+> Nếu dùng `pip` thông thường (không có `uv`):
+> ```bash
+> pip install -e ".[dev,llm]"
+> ```
+> ⚠️ Lỗi phổ biến: `pip install -e "[dev]"` (thiếu dấu `.`) → báo lỗi *not a valid editable requirement*.
 
 ### 2. Cấu hình API keys trong `.env`
 
